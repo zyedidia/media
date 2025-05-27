@@ -30,7 +30,7 @@ public final class VpxLibrary {
   }
 
   private static final LibraryLoader LOADER =
-      new LibraryLoader("vpx", "vpxV2JNI") {
+      new LibraryLoader("vpxV2JNI") {
         @Override
         protected void loadLibrary(String name) {
           System.loadLibrary(name);

@@ -34,9 +34,19 @@
 #include "vpx/vp8dx.h"
 #include "vpx/vpx_decoder.h"
 
+extern "C" {
+    void* vpx_box_calloc(size_t, size_t);
+    void* vpx_box_malloc(size_t);
+    void* vpx_box_realloc(void*, size_t);
+    void vpx_box_free(void*);
+    void* vpx_box_register_cb(void*, size_t);
+}
+
 #define LOG_TAG "vpx_jni"
 #define LOGE(...) \
   ((void)__android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__))
+#define LOGI(...) \
+  ((void)__android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__))
 
 #define DECODER_FUNC(RETURN_TYPE, NAME, ...)                                \
   extern "C" {                                                              \
@@ -315,7 +325,7 @@ class JniBufferManager {
 
   ~JniBufferManager() {
     while (all_buffer_count--) {
-      free(all_buffers[all_buffer_count]->vpx_fb.data);
+      vpx_box_free(all_buffers[all_buffer_count]->vpx_fb.data);
     }
   }
 
@@ -325,15 +335,15 @@ class JniBufferManager {
     if (free_buffer_count) {
       out_buffer = free_buffers[--free_buffer_count];
       if (out_buffer->vpx_fb.size < min_size) {
-        free(out_buffer->vpx_fb.data);
-        out_buffer->vpx_fb.data = (uint8_t*)malloc(min_size);
+        vpx_box_free(out_buffer->vpx_fb.data);
+        out_buffer->vpx_fb.data = (uint8_t*)vpx_box_malloc(min_size);
         out_buffer->vpx_fb.size = min_size;
       }
     } else {
       out_buffer = new JniFrameBuffer();
       out_buffer->id = all_buffer_count;
       all_buffers[all_buffer_count++] = out_buffer;
-      out_buffer->vpx_fb.data = (uint8_t*)malloc(min_size);
+      out_buffer->vpx_fb.data = (uint8_t*)vpx_box_malloc(min_size);
       out_buffer->vpx_fb.size = min_size;
       out_buffer->vpx_fb.priv = &out_buffer->id;
     }
@@ -435,12 +445,13 @@ int vpx_release_frame_buffer(void* priv, vpx_codec_frame_buffer_t* fb) {
 DECODER_FUNC(jlong, vpxInit, jboolean disableLoopFilter,
              jboolean enableRowMultiThreadMode, jint threads) {
   JniCtx* context = new JniCtx();
-  context->decoder = new vpx_codec_ctx_t();
-  vpx_codec_dec_cfg_t cfg = {0, 0, 0};
-  cfg.threads = threads;
+  context->decoder = (vpx_codec_ctx_t*) vpx_box_calloc(sizeof(vpx_codec_ctx_t), 1);
+  vpx_codec_dec_cfg_t* cfg = (vpx_codec_dec_cfg_t*) vpx_box_malloc(sizeof(vpx_codec_dec_cfg_t));
+  *cfg = {0, 0, 0};
+  cfg->threads = 1;
   errorCode = 0;
   vpx_codec_err_t err =
-      vpx_codec_dec_init(context->decoder, &vpx_codec_vp9_dx_algo, &cfg, 0);
+      vpx_codec_dec_init(context->decoder, vpx_codec_vp9_dx(), cfg, 0);
   if (err) {
     LOGE("Failed to initialize libvpx decoder, error = %d.", err);
     errorCode = err;
@@ -466,8 +477,10 @@ DECODER_FUNC(jlong, vpxInit, jboolean disableLoopFilter,
     }
 #endif
   }
+  void* box_get_frame_buffer = vpx_box_register_cb((void*) vpx_get_frame_buffer, 0);
+  void* box_release_frame_buffer = vpx_box_register_cb((void*) vpx_release_frame_buffer, 0);
   err = vpx_codec_set_frame_buffer_functions(
-      context->decoder, vpx_get_frame_buffer, vpx_release_frame_buffer,
+      context->decoder, (vpx_get_frame_buffer_cb_fn_t) box_get_frame_buffer, (vpx_release_frame_buffer_cb_fn_t) box_release_frame_buffer,
       context->buffer_manager);
   if (err) {
     LOGE("Failed to set libvpx frame buffer functions, error = %d.", err);
@@ -485,15 +498,25 @@ DECODER_FUNC(jlong, vpxInit, jboolean disableLoopFilter,
   outputModeField = env->GetFieldID(outputBufferClass, "mode", "I");
   decoderPrivateField =
       env->GetFieldID(outputBufferClass, "decoderPrivate", "I");
+  LOGI("vpx-lfi: initialized sandboxed decoder: %p", context->decoder);
   return reinterpret_cast<intptr_t>(context);
 }
+
+static _Thread_local void* vpx_buffer;
+static _Thread_local size_t vpx_bufferSize;
 
 DECODER_FUNC(jlong, vpxDecode, jlong jContext, jobject encoded, jint len) {
   JniCtx* const context = reinterpret_cast<JniCtx*>(jContext);
   const uint8_t* const buffer =
       reinterpret_cast<const uint8_t*>(env->GetDirectBufferAddress(encoded));
+  if (len > vpx_bufferSize) {
+    vpx_buffer = vpx_box_realloc(vpx_buffer, len);
+    vpx_bufferSize = len;
+    LOGI("vpx-lfi: (re)allocated sandboxed buffer %p", vpx_buffer);
+  }
+  memcpy(vpx_buffer, buffer, len);
   const vpx_codec_err_t status =
-      vpx_codec_decode(context->decoder, buffer, len, NULL, 0);
+      vpx_codec_decode(context->decoder, (const uint8_t* const) vpx_buffer, len, NULL, 0);
   errorCode = 0;
   if (status != VPX_CODEC_OK) {
     LOGE("vpx_codec_decode() failed, status= %d", status);

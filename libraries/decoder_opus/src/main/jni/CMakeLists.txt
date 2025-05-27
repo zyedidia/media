@@ -22,11 +22,9 @@ set(CMAKE_CXX_STANDARD 11)
 # Define project name for your JNI module
 project(libopusJNI C CXX)
 
-set(libopus_jni_root "${CMAKE_CURRENT_SOURCE_DIR}")
+enable_language(ASM)
 
-# Build libopus.
-add_subdirectory("${libopus_jni_root}/libopus"
-                 EXCLUDE_FROM_ALL)
+set(libopus_jni_root "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Add the include directory from libopus.
 include_directories ("${libopus_jni_root}/libopus/include")
@@ -34,7 +32,16 @@ include_directories ("${libopus_jni_root}/libopus/include")
 # Build libopusJNI.
 add_library(opusV2JNI
             SHARED
+            gen/embed/lib/includes.c
+            gen/embed/lib/lib.c
+            gen/embed/lib/arch/arm64/callback.S
+            gen/embed/lib/arch/arm64/trampolines.S
             opus_jni.cc)
+
+target_include_directories(opusV2JNI
+    PRIVATE
+        gen/embed/lib
+)
 
 # Locate NDK log library.
 find_library(android_log_lib log)
@@ -42,7 +49,7 @@ find_library(android_log_lib log)
 # Link libopusJNI against used libraries.
 target_link_libraries(opusV2JNI
                       PRIVATE android
-                      PRIVATE opus
+                      PRIVATE lfi
                       PRIVATE ${android_log_lib})
 
 # Enable 16 KB ELF alignment.
