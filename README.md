@@ -33,7 +33,7 @@ it up locally.
 Now you can build the sandboxed libopus:
 
 ```
-cd libraries/decoder_ops/src/main/jni
+cd libraries/decoder_opus/src/main/jni
 git clone https://gitlab.xiph.org/xiph/opus.git libopus
 make LFICC=... -B
 ```
