@@ -1,3 +1,49 @@
+# LFI Sandboxing for Android Media
+
+This fork contains modified versions of the Opus and VP9 ExoPlayer decoders so
+that they can run in an app inside of an LFI sandbox.
+
+These instructions will tell you how to set up the Opus sandboxed decoder for
+use with an app that uses ExoPlayer, such as
+[OpusDemo](https://github.com/zyedidia/OpusDemo). If you use the OpusDemo
+repository, make sure to change the last line of `settings.gradle.kts` to point
+to your checkout of this repository (pointing to `core_settings.gradle`).
+
+### Build
+
+First, you'll need latest `lfi-bind` installed from the `new-tls` branch. Next,
+you'll need `liblfi` built from the `new-tls` branch of the main lfi repository
+and you need it to be built for Android. To cross-compile liblfi, first create
+a cross file (there is an example one for android in `toolchains/android.txt`
+that uses my local NDK compiler).
+
+```
+meson setup build-android --cross-file toolchains/android.txt
+cd build-android
+ninja liblfi/liblfi.a
+```
+
+Next, you'll have to place this library somewhere it can be found by your NDK
+build. As a quick solution, on my machine I placed it in my NDK sysroot:
+`Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/`.
+There might be better locations, or it's probably possible to modify the CMake
+file (`libraries/decoder_opus/src/main/jni/CMakeLists.txt`) so that it can pick
+it up locally.
+
+Now you can build the sandboxed libopus:
+
+```
+cd libraries/decoder_ops/src/main/jni
+git clone https://gitlab.xiph.org/xiph/opus.git libopus
+make LFICC=... -B
+```
+
+This should build libopus with the provided LFI compiler. By default it will
+use `aarch64-lfi-linux-musl-clang`. This will also generate the trampolines in
+`gen/` with the `lfi-bind` command.
+
+Once complete, you can include the Opus decoder from an app like the OpusDemo app.
+
 # AndroidX Media
 
 AndroidX Media is a collection of libraries for implementing media use cases on
