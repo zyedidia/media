@@ -1,5 +1,5 @@
-LFICC=/opt/aarch64-lfi-sysext-clang/bin/clang
-LFICXX=/opt/aarch64-lfi-sysext-clang/bin/clang++
+LFICC=/opt/aarch64-lfi-clang/bin/clang
+LFICXX=/opt/aarch64-lfi-clang/bin/clang++
 
 lib: gen/stub.elf
 	lfi-bind -gen-lib $(CURDIR)/gen/stub.elf -arch arm64 -dir gen libopus/build/libopus.a
